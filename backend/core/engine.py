@@ -18,6 +18,7 @@ from backend.core.macro_variables import (
     calculate_all_macro_variables
 )
 from backend.core.message_generator import create_message_generator, MessageGenerator
+from backend.core.work_collaboration import WorkCollaborationManager, create_work_collaboration_manager
 from backend.common.config import GameConfig, default_config
 
 
@@ -76,6 +77,9 @@ class Civilization:
         # 初始化消息生成器
         self.message_generator = create_message_generator(civilization_id)
         self.message_generator.register_agents(agents)
+
+        # 初始化工作协作管理器
+        self.work_manager = create_work_collaboration_manager()
 
     def get_agent(self, agent_id: str) -> Optional[Agent]:
         """获取指定Agent"""
@@ -266,14 +270,21 @@ class GameEngine:
         # 3. 模拟内鬼行为（如果有内鬼）
         self._process_traitor_actions(civilization)
 
-        # 4. 生成Agent对话（使用LLM）
+        # 4. 处理工作协作（事件生成、多轮交互、评估）
+        work_result = self._process_work_collaboration(civilization)
+
+        # 5. 生成Agent对话（使用LLM）
         self._generate_agent_communications(civilization)
 
-        # 5. 更新状态
+        # 6. 更新状态
         self._update_agent_states(civilization)
 
-        # 6. 计算产出
+        # 7. 计算产出
         output = ProductionCalculator.calculate_cycle_output(agents, config, self.config)
+
+        # 应用工作协作产出奖励
+        if work_result and work_result.get("output_bonus"):
+            output["cycle_output"] *= work_result["output_bonus"]
 
         civilization.state.total_output += output["cycle_output"]
         civilization.state.cycle_outputs.append(output["cycle_output"])
@@ -403,6 +414,49 @@ class GameEngine:
             effect={"type": behavior.value}
         )
         civilization.traitor_events.append(event)
+
+    def _process_work_collaboration(self, civilization: Civilization) -> Dict:
+        """
+        处理工作协作流程
+
+        包括：工作事件生成 → 角色分配 → 多轮交互 → 结果评估
+
+        Returns:
+            协作结果字典
+        """
+        try:
+            # 构建游戏状态
+            game_state = {
+                "energy_level": civilization.state.energy_level_history[-1] if civilization.state.energy_level_history else 0.5,
+                "cohesion": civilization.state.cohesion_history[-1] if civilization.state.cohesion_history else 0.5,
+                "fidelity": civilization.state.fidelity_history[-1] if civilization.state.fidelity_history else 0.5,
+                "social_capital": civilization.state.social_capital_history[-1] if civilization.state.social_capital_history else 0.5,
+                "total_output": civilization.state.total_output,
+            }
+
+            # 检查是否有活跃内鬼
+            traitor_active = any(a.is_active_traitor for a in civilization.agents)
+
+            # 处理工作协作
+            result = civilization.work_manager.process_work_collaboration(
+                agents=civilization.agents,
+                game_state=game_state,
+                traitor_active=traitor_active
+            )
+
+            print(f"[{civilization.civilization_id}] 循环{civilization.state.cycle}: "
+                  f"工作事件《{result['event'].title}》完成, "
+                  f"质量={result['quality']:.2f}, "
+                  f"协作={result['collaboration_score']:.2f}, "
+                  f"产出系数={result['output_bonus']:.2f}")
+
+            return result
+
+        except Exception as e:
+            print(f"处理工作协作时出错: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def _generate_agent_communications(self, civilization: Civilization):
         """
