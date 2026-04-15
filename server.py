@@ -52,18 +52,36 @@ async def health_check():
 app.include_router(game_router, prefix="/api/v1/game", tags=["游戏控制"])
 app.include_router(comm_router, prefix="/api/v1", tags=["通讯系统"])
 
-# 静态文件服务（前端构建后的文件）- 最后注册，避免覆盖API路由
+# 静态文件服务（前端构建后的文件）- 先注册静态文件，再注册SPA路由
 frontend_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 print(f"[*] 前端静态文件路径: {frontend_dist}")
 print(f"[*] 路径是否存在: {os.path.exists(frontend_dist)}")
 if os.path.exists(frontend_dist):
+    # 挂载静态文件目录（JS、CSS等）
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+    
+    # 根路径返回index.html
+    @app.get("/")
+    async def serve_root():
+        index_file = os.path.join(frontend_dist, "index.html")
+        return FileResponse(index_file)
+    
+    # 特定静态文件（vite.svg等）
+    @app.get("/vite.svg")
+    async def serve_vite_svg():
+        svg_file = os.path.join(frontend_dist, "vite.svg")
+        if os.path.exists(svg_file):
+            return FileResponse(svg_file, media_type="image/svg+xml")
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    # SPA路由 - 其他所有路径返回index.html
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         # 如果请求的是API路径，让API路由处理
         if full_path.startswith("api/"):
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Not Found")
-        # 否则返回前端index.html
+        # 否则返回前端index.html（SPA路由）
         index_file = os.path.join(frontend_dist, "index.html")
         if os.path.exists(index_file):
             return FileResponse(index_file)

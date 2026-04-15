@@ -464,35 +464,33 @@ class LLMDialogueGenerator:
 
     def _describe_emotional_state(self, psychology: PsychologySystem) -> str:
         """描述情绪状态"""
-        emotional = psychology.state.emotional
+        state = psychology.state
         states = []
 
-        if emotional.joy > 0.6:
-            states.append("心情愉悦")
-        elif emotional.sadness > 0.5:
-            states.append("有些低落")
+        # 基于认知熵和压力水平描述
+        if state.cognitive_entropy > 0.7:
+            states.append("认知混乱")
+        elif state.cognitive_entropy > 0.4:
+            states.append("思路清晰")
 
-        if emotional.anger > 0.5:
-            states.append("感到愤怒")
-        elif emotional.fear > 0.5:
-            states.append("有些担忧")
-
-        if emotional.trust > 0.6:
-            states.append("充满信任")
-        elif emotional.disgust > 0.4:
-            states.append("感到厌恶")
-
-        if emotional.anticipation > 0.5:
-            states.append("满怀期待")
-
-        stress = psychology.state.cognitive.stress
-        if stress > 0.7:
+        if state.stress_level > 0.7:
             states.append("压力很大")
-        elif stress > 0.4:
+        elif state.stress_level > 0.4:
             states.append("略有压力")
 
+        # 基于行为倾向描述
+        if state.cooperation_willingness > 0.7:
+            states.append("合作意愿强")
+        elif state.betrayal_willingness > 0.5:
+            states.append("有背叛倾向")
+
+        if state.trust_in_civilization > 0.7:
+            states.append("对文明充满信任")
+        elif state.trust_in_civilization < 0.4:
+            states.append("对文明有所怀疑")
+
         if not states:
-            states.append("情绪平稳")
+            states.append("心态平稳")
 
         return "、".join(states)
 
@@ -549,15 +547,15 @@ class LLMDialogueGenerator:
         context: DialogueContext
     ) -> MessageTone:
         """确定消息语气"""
-        mood = psychology.state.emotional.get_mood_score()
+        state = psychology.state
 
         if context.trust_level < 0.3:
             return MessageTone.HOSTILE
-        elif mood > 0.3:
+        elif state.cooperation_willingness > 0.6:
             return MessageTone.FRIENDLY
-        elif mood < -0.3:
-            return MessageTone.HOSTILE
-        elif psychology.state.cognitive.stress > 0.7:
+        elif state.betrayal_willingness > 0.5:
+            return MessageTone.MANIPULATIVE
+        elif state.stress_level > 0.7:
             return MessageTone.URGENT
 
         return MessageTone.NEUTRAL
@@ -565,30 +563,25 @@ class LLMDialogueGenerator:
     def _get_emotion_markers(self, psychology: PsychologySystem) -> List[str]:
         """获取情绪标记"""
         markers = []
-        emotional = psychology.state.emotional
+        state = psychology.state
 
-        emotion_map = {
-            EmotionType.JOY: (emotional.joy, ["开心", "愉快", "兴奋"]),
-            EmotionType.ANGER: (emotional.anger, ["生气", "愤怒", "不满"]),
-            EmotionType.FEAR: (emotional.fear, ["担心", "害怕", "焦虑"]),
-            EmotionType.TRUST: (emotional.trust, ["信任", "放心", "依赖"]),
-            EmotionType.DISGUST: (emotional.disgust, ["厌恶", "反感", "排斥"]),
-            EmotionType.SADNESS: (emotional.sadness, ["难过", "失落", "沮丧"]),
-            EmotionType.SURPRISE: (emotional.surprise, ["惊讶", "意外", "震惊"]),
-            EmotionType.ANTICIPATION: (emotional.anticipation, ["期待", "盼望", "憧憬"])
-        }
+        # 基于行为倾向生成情绪标记
+        if state.cooperation_willingness > 0.7:
+            markers.append("合作")
+        if state.betrayal_willingness > 0.5:
+            markers.append("谨慎")
 
-        sorted_emotions = sorted(
-            emotion_map.items(),
-            key=lambda x: x[1][0],
-            reverse=True
-        )
+        if state.stress_level > 0.7:
+            markers.append("压力大")
+        elif state.stress_level > 0.4:
+            markers.append("略有压力")
 
-        for emotion_type, (value, words) in sorted_emotions[:2]:
-            if value > 0.3:
-                markers.append(self.rng.choice(words))
+        if state.trust_in_civilization > 0.7:
+            markers.append("信任")
+        elif state.trust_in_civilization < 0.4:
+            markers.append("怀疑")
 
-        return markers[:2]
+        return markers[:3] if markers else ["平静"]
 
     def _get_hidden_intent(
         self,
@@ -596,11 +589,11 @@ class LLMDialogueGenerator:
         message_type: MessageType
     ) -> Optional[str]:
         """获取隐藏意图"""
+        # 如果是操纵或说服类型消息
         if message_type in [MessageType.MANIPULATE, MessageType.PERSUADE]:
-            if psychology.volition.get_top_goal():
-                goal = psychology.volition.get_top_goal()
-                if goal.goal_type == GoalType.REBELLION:
-                    return "试图动摇对方立场"
+            # 如果背叛倾向高，可能有隐藏意图
+            if psychology.state.betrayal_willingness > 0.5:
+                return "试图影响对方"
 
         return None
 

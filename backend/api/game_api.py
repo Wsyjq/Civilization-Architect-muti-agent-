@@ -64,6 +64,7 @@ class AgentCardResponse(BaseModel):
     name: str
     description: str
     personality: Dict[str, float]
+    state: Dict[str, float]  # AgentState: energy, cognitive_entropy, loyalty, contribution, efficiency
     position: str
     level: int
     centrality: float
@@ -241,11 +242,13 @@ async def run_round(game_id: str, request: RunRoundRequest = None):
         )
 
     # 执行一轮
+    # 保存执行前的回合号（消息存储时使用该回合号）
+    current_round = session.civilization.state.round
     session.engine.run_round(session.civilization)
 
     # 记录历史
     round_data = {
-        "round": session.civilization.state.round,
+        "round": current_round,
         "total_output": session.civilization.state.total_output,
         "energy_level": session.civilization.state.energy_level_history[-1] if session.civilization.state.energy_level_history else 0,
         "cohesion": session.civilization.state.cohesion_history[-1] if session.civilization.state.cohesion_history else 0,
@@ -255,10 +258,10 @@ async def run_round(game_id: str, request: RunRoundRequest = None):
     session.round_history.append(round_data)
 
     # 生成模拟消息（简化版）
-    messages = _generate_round_messages(session)
+    messages = _generate_round_messages(session, current_round)
 
     return RoundResultResponse(
-        round_num=session.civilization.state.round,
+        round_num=current_round,
         cycle_outputs=session.civilization.state.cycle_outputs,
         total_output=session.civilization.state.total_output,
         macro_variables={
@@ -395,6 +398,13 @@ def _build_game_state_response(session: GameSession) -> GameStateResponse:
                 "intelligence": agent.personality.intelligence,
                 "loyalty_base": agent.personality.loyalty_base,
             },
+            state={
+                "energy": agent.state.energy,
+                "cognitive_entropy": agent.state.cognitive_entropy,
+                "loyalty": agent.state.loyalty,
+                "contribution": agent.state.contribution,
+                "efficiency": agent.state.efficiency,
+            },
             position=agent.position,
             level=agent.level,
             centrality=agent.centrality,
@@ -419,41 +429,50 @@ def _build_game_state_response(session: GameSession) -> GameStateResponse:
     )
 
 
-def _generate_round_messages(session: GameSession) -> List[Dict[str, Any]]:
+def _generate_round_messages(session: GameSession, round_num: int) -> List[Dict[str, Any]]:
     """
     获取轮次消息
-    
+
     从消息存储中获取由LLM生成的真实Agent对话
     """
     from backend.models.message_store import get_message_store
-    
+
     store = get_message_store()
-    
-    # 获取当前文明在当前回合的消息
+
+    # 获取当前文明在指定回合的消息
     db_messages = store.get_messages_by_civilization(
         civilization_id=session.civilization.civilization_id,
-        round_num=session.civilization.state.round,
+        round_num=round_num,
         limit=50
     )
-    
+
     # 转换为API响应格式
     messages = []
     for msg in db_messages:
+        # 查找发送者和接收者名称
+        sender_name = msg.sender_id
+        receiver_name = msg.receiver_id
+        for agent in session.civilization.agents:
+            if agent.id == msg.sender_id:
+                sender_name = agent.name
+            if agent.id == msg.receiver_id:
+                receiver_name = agent.name
+
         message_data = {
             "sender_id": msg.sender_id,
-            "sender_name": msg.sender_name,
+            "sender_name": sender_name,
             "receiver_id": msg.receiver_id,
-            "receiver_name": msg.receiver_name,
-            "message_type": msg.message_type.value,
-            "content": msg.natural_language.message if msg.natural_language else "",
-            "tone": msg.natural_language.tone.value if msg.natural_language else "neutral",
-            "timestamp": msg.timestamp,
-            "is_traitor": msg.is_traitor_action,
-            "importance": msg.importance_score,
-            "cycle_num": msg.cycle_num
+            "receiver_name": receiver_name,
+            "message_type": "chat",
+            "content": msg.content,
+            "tone": "neutral",
+            "timestamp": msg.timestamp.isoformat() if hasattr(msg.timestamp, 'isoformat') else str(msg.timestamp),
+            "is_traitor": False,
+            "importance": 0.5,
+            "cycle_num": session.civilization.state.cycle
         }
         messages.append(message_data)
-    
+
     return messages
 
 

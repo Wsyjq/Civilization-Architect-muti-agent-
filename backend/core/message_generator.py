@@ -401,40 +401,22 @@ class MessageGenerator:
         Returns:
             心理系统对象
         """
-        trait = Trait(
-            authority=agent.personality.authority,
-            selfishness=agent.personality.selfishness,
-            altruism=agent.personality.altruism,
-            sociability=agent.personality.sociability,
-            intelligence=agent.personality.intelligence,
-            risk_appetite=agent.personality.risk_appetite,
-            resilience=agent.personality.resilience,
-            loyalty_base=agent.personality.loyalty_base
-        )
+        from backend.models.psychology_v2 import PsychologySystem as PS
 
-        psych = PsychologySystem(trait=trait)
+        psych = PsychologySystem(agent_id=agent.id)
 
-        # 设置当前状态
-        psych.state.cognitive.stress = agent.state.cognitive_entropy
-        psych.state.cognitive.mental_clarity = agent.state.efficiency
+        # 设置性格特质
+        psych.state.cognitive_entropy = agent.state.cognitive_entropy
+        psych.state.stress_level = agent.state.cognitive_entropy
 
-        # 根据忠诚度设置情绪
+        # 设置信任
+        psych.state.trust_in_civilization = agent.personality.loyalty_base
+
+        # 根据忠诚度设置行为倾向
         if agent.state.loyalty > 0.7:
-            psych.state.emotional.trust = 0.7
-            psych.state.emotional.joy = 0.5
+            psych.state.cooperation_willingness = 0.8
         elif agent.state.loyalty < 0.3:
-            psych.state.emotional.fear = 0.5
-            psych.state.emotional.anger = 0.4
-
-        # 内鬼有特定目标
-        if agent.is_active_traitor:
-            from backend.models.psychology_v2 import Goal, GoalType
-            psych.volition.set_goal(Goal(
-                goal_type=GoalType.REBELLION,
-                priority=0.8,
-                intensity=0.7,
-                target=None
-            ))
+            psych.state.betrayal_willingness = 0.6
 
         return psych
 

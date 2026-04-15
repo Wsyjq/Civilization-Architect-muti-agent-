@@ -192,7 +192,7 @@ class GameEngine:
                 agent.initialize_trust(agent_ids)
 
             # 创建架构（动态生成）
-            config = create_architecture(arch_type, agent_ids)
+            config = create_architecture(arch_type, len(agent_ids))
 
             # 分配Agent位置
             agents = ArchitectureAnalyzer.assign_agent_positions(config, agents)
