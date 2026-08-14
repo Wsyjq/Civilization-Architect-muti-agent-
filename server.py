@@ -12,7 +12,12 @@ from contextlib import asynccontextmanager
 import os
 
 from backend.api.game_api import router as game_router
-from backend.api.communication_api_v2 import router as comm_router
+
+try:
+    from backend.api.communication_api_v2 import router as comm_router
+except ImportError:
+    comm_router = None
+    print("[*] 警告: 通讯系统模块(communication_api_v2)缺失，相关接口不可用")
 
 
 @asynccontextmanager
@@ -50,7 +55,8 @@ async def health_check():
 
 # 注册路由 - 先注册API路由
 app.include_router(game_router, prefix="/api/v1/game", tags=["游戏控制"])
-app.include_router(comm_router, prefix="/api/v1", tags=["通讯系统"])
+if comm_router is not None:
+    app.include_router(comm_router, prefix="/api/v1", tags=["通讯系统"])
 
 # 静态文件服务（前端构建后的文件）- 先注册静态文件，再注册SPA路由
 frontend_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
