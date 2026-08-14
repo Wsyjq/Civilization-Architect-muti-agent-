@@ -181,8 +181,35 @@ async def start_game(request: StartGameRequest):
 
     _sessions[game_id] = session
 
+    # 持久化游戏存档
+    try:
+        from backend.models.db import save_game_db
+        save_game_db(game_id, request.username, arch_type.value, request.total_rounds)
+    except Exception:
+        pass
+
     # 返回初始状态
     return _build_game_state_response(session)
+
+
+@router.get("/history")
+async def get_game_history(limit: int = 50):
+    """获取历史对局列表（来自SQLite持久化存档）"""
+    from backend.models.db import list_games_db
+    games = list_games_db(limit)
+    for g in games:
+        g.pop("final_result", None)
+    return {"total": len(games), "games": games}
+
+
+@router.get("/history/{game_id}")
+async def get_game_history_detail(game_id: str):
+    """获取单局历史详情（含最终结果）"""
+    from backend.models.db import load_game_db
+    game = load_game_db(game_id)
+    if not game:
+        raise HTTPException(status_code=404, detail="历史对局不存在")
+    return game
 
 
 @router.get("/{game_id}/status", response_model=GameStateResponse)
@@ -257,6 +284,18 @@ async def run_round(game_id: str, request: RunRoundRequest = None):
     }
     session.round_history.append(round_data)
 
+    # 更新持久化存档
+    try:
+        from backend.models.db import save_game_db
+        save_game_db(
+            game_id, session.username, session.architecture_type.value,
+            session.engine.total_rounds,
+            current_round=session.civilization.state.round,
+            total_output=session.civilization.state.total_output,
+        )
+    except Exception:
+        pass
+
     # 生成模拟消息（简化版）
     messages = _generate_round_messages(session, current_round)
 
@@ -310,7 +349,7 @@ async def end_game(game_id: str):
     # 清理会话
     del _sessions[game_id]
 
-    return FinalResultResponse(
+    result = FinalResultResponse(
         game_id=game_id,
         username=session.username,
         architecture_type=session.architecture_type.value,
@@ -321,6 +360,22 @@ async def end_game(game_id: str):
         analysis_report=analysis,
         history=session.round_history
     )
+
+    # 持久化最终结果
+    try:
+        from backend.models.db import save_game_db
+        save_game_db(
+            game_id, session.username, session.architecture_type.value,
+            session.engine.total_rounds,
+            current_round=session.civilization.state.round,
+            status="ended",
+            total_output=session.civilization.state.total_output,
+            final_result=result.dict(),
+        )
+    except Exception:
+        pass
+
+    return result
 
 
 # ============================================

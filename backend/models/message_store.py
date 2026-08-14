@@ -65,6 +65,21 @@ class MessageStore:
             if civilization_id not in self.civilization_messages:
                 self.civilization_messages[civilization_id] = []
             self.civilization_messages[civilization_id].append(message.id)
+
+        # 持久化到SQLite（失败不影响内存存储）
+        try:
+            from backend.models.db import save_message_db
+            save_message_db(
+                message_id=message.id,
+                civilization_id=civilization_id or "",
+                sender_id=message.sender_id,
+                receiver_id=message.receiver_id,
+                content=message.content,
+                round_num=message.round_num,
+                timestamp=message.timestamp.isoformat(),
+            )
+        except Exception:
+            pass
     
     def get_message(self, message_id: str) -> Optional[MessageRecord]:
         """获取消息"""

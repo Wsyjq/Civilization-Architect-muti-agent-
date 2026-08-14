@@ -52,4 +52,51 @@ export const gameApi = {
   },
 }
 
+export interface TimelineMessage {
+  id: string
+  sender_id: string
+  receiver_id: string
+  content: string
+  timestamp: string
+  round_num: number
+}
+
+export interface TimelineRound {
+  round_num: number
+  messages: TimelineMessage[]
+}
+
+export interface CivilizationActivity {
+  civilization_id: string
+  total_messages: number
+  messages_by_round: { round_num: number; count: number }[]
+  most_active_agents: [string, number][]
+}
+
+export const commApi = {
+  // 获取文明消息时间线（按回合分组）
+  getTimeline: async (civilizationId: string) => {
+    const response = await api.get<{ civilization_id: string; timeline: TimelineRound[] }>(
+      `/civilizations/${civilizationId}/timeline`
+    )
+    return response.data
+  },
+
+  // 获取文明活动概览
+  getActivity: async (civilizationId: string) => {
+    const response = await api.get<CivilizationActivity>(
+      `/civilizations/${civilizationId}/activity`
+    )
+    return response.data
+  },
+
+  // 获取两个Agent之间的对话
+  getConversation: async (agent1: string, agent2: string) => {
+    const response = await api.get<{ total: number; messages: TimelineMessage[] }>(
+      `/conversations/${agent1}/${agent2}`
+    )
+    return response.data
+  },
+}
+
 export default api

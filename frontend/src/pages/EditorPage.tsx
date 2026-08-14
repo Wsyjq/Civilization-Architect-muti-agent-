@@ -3,9 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Play, SkipForward, Flag, MessageSquare,
-  Users, Settings, ChevronDown, ChevronUp, Brain
+  Users, Settings, ChevronDown, ChevronUp, Brain, History
 } from 'lucide-react'
-import { gameApi } from '@/services/api'
+import { gameApi, commApi } from '@/services/api'
+import type { TimelineRound } from '@/services/api'
 import { useGame } from '@/stores/GameContext'
 import type { Agent, Message, MacroVariables, AgentPosition } from '@/types/game'
 
@@ -21,8 +22,32 @@ export default function EditorPage() {
   const [macroVars, setMacroVars] = useState<MacroVariables | null>(null)
   const [displayedMessages, setDisplayedMessages] = useState<Message[]>([]) // 逐步显示的消息
   const [pendingMessages, setPendingMessages] = useState<Message[]>([]) // 待显示的消息
+  const [showHistory, setShowHistory] = useState(false) // 历史时间线视图
+  const [historyTimeline, setHistoryTimeline] = useState<TimelineRound[]>([])
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
   const agents = state.gameState?.agents || []
+  const civilizationId = agents[0]?.id.split('_A')[0] // 从Agent ID推导文明ID
+
+  // 加载历史时间线
+  const handleToggleHistory = async () => {
+    if (showHistory) {
+      setShowHistory(false)
+      return
+    }
+    setShowHistory(true)
+    if (!civilizationId) return
+    setIsLoadingHistory(true)
+    try {
+      const data = await commApi.getTimeline(civilizationId)
+      setHistoryTimeline(data.timeline)
+    } catch (error) {
+      console.error('Failed to load timeline:', error)
+      setHistoryTimeline([])
+    } finally {
+      setIsLoadingHistory(false)
+    }
+  }
 
   // 逐步显示消息的效果
   useEffect(() => {
@@ -212,16 +237,48 @@ export default function EditorPage() {
           <div className="card flex-1 flex flex-col overflow-hidden min-h-0">
             <h3 className="font-heading text-lg text-cyber-accent mb-4 flex items-center gap-2 flex-shrink-0">
               <MessageSquare className="w-5 h-5" />
-              Agent实时通讯
+              {showHistory ? '历史时间线' : 'Agent实时通讯'}
+              <button
+                onClick={handleToggleHistory}
+                className="ml-auto text-xs btn-secondary flex items-center gap-1 px-2 py-1"
+              >
+                {showHistory ? <MessageSquare className="w-3 h-3" /> : <History className="w-3 h-3" />}
+                {showHistory ? '返回实时' : '历史'}
+              </button>
             </h3>
 
             {/* 消息列表 - 固定高度，可滚动 */}
             <div className="flex-1 overflow-y-auto space-y-2 mb-4 min-h-0 pr-1">
+              {showHistory ? (
+                isLoadingHistory ? (
+                  <div className="text-cyber-text-muted text-sm p-4">加载历史消息中...</div>
+                ) : historyTimeline.length === 0 ? (
+                  <div className="text-cyber-text-muted text-sm p-4">暂无历史消息，先执行一轮模拟</div>
+                ) : (
+                  historyTimeline.map((round) => (
+                    <div key={round.round_num}>
+                      <div className="text-xs font-mono text-cyber-accent/70 my-2 border-b border-cyber-border/50 pb-1">
+                        — 第 {round.round_num} 回合 —
+                      </div>
+                      <div className="space-y-1">
+                        {round.messages.map((msg) => (
+                          <div key={msg.id} className="text-sm p-2 rounded bg-cyber-secondary/30">
+                            <span className="text-cyber-accent">{msg.sender_id}</span>
+                            <span className="text-cyber-text-muted"> → {msg.receiver_id}: </span>
+                            <span className="text-cyber-text">{msg.content}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )
+              ) : (
               <AnimatePresence>
                 {displayedMessages.map((msg, index) => (
                   <MessageBubble key={`${msg.sender_id}-${index}`} message={msg} />
                 ))}
               </AnimatePresence>
+              )}
 
               {/* 思考动画 */}
               {isThinking && (

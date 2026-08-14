@@ -134,6 +134,32 @@ class TestGameEngine:
         assert len(civ.state.social_capital_history) > 0
 
 
+# ---------- SQLite 持久化 ----------
+
+class TestPersistence:
+    def test_message_persistence(self, tmp_path):
+        from backend.models import db
+        db.save_message_db("pm1", "CIV-P", "A1", "A2", "persist me", 3)
+        rows = db.load_messages_db(civilization_id="CIV-P")
+        assert any(r["id"] == "pm1" and r["content"] == "persist me"
+                   and r["round_num"] == 3 for r in rows)
+
+    def test_game_archive(self):
+        from backend.models import db
+        db.save_game_db("GAME-TEST1", "tester", "tree", 10)
+        db.save_game_db("GAME-TEST1", "tester", "tree", 10,
+                        current_round=5, total_output=123.4)
+        db.save_game_db("GAME-TEST1", "tester", "tree", 10,
+                        current_round=10, status="ended", total_output=500.0,
+                        final_result={"score": 500})
+        g = db.load_game_db("GAME-TEST1")
+        assert g["status"] == "ended"
+        assert g["total_output"] == 500.0
+        assert g["final_result"]["score"] == 500
+        assert db.load_game_db("GAME-NOPE") is None
+        assert any(x["game_id"] == "GAME-TEST1" for x in db.list_games_db())
+
+
 # ---------- HTTP API 集成 ----------
 
 class TestAPI:
@@ -189,3 +215,21 @@ class TestAPI:
         assert client.get(f"/api/v1/civilizations/{civ_id}/activity").status_code == 200
         assert client.get(f"/api/v1/civilizations/{civ_id}/timeline").status_code == 200
         assert client.get("/api/v1/civilizations/NOPE/activity").status_code == 404
+
+    def test_game_history(self, client):
+        r = client.post("/api/v1/game/start", json={
+            "username": "hist", "architecture_type": "star",
+            "total_rounds": 1, "seed": 2,
+        })
+        game_id = r.json()["game_id"]
+        client.post(f"/api/v1/game/{game_id}/run-round", json={})
+        client.post(f"/api/v1/game/{game_id}/end")
+
+        r = client.get("/api/v1/game/history")
+        assert r.status_code == 200
+        assert any(g["game_id"] == game_id for g in r.json()["games"])
+
+        r = client.get(f"/api/v1/game/history/{game_id}")
+        assert r.status_code == 200
+        assert r.json()["status"] == "ended"
+        assert client.get("/api/v1/game/history/GAME-NOPE").status_code == 404
