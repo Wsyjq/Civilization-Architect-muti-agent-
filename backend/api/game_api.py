@@ -268,10 +268,32 @@ async def run_round(game_id: str, request: RunRoundRequest = None):
             session.custom_adjacency, dtype=float
         )
 
-    # 执行一轮
+    # 执行一轮（逐循环执行并广播进度）
     # 保存执行前的回合号（消息存储时使用该回合号）
     current_round = session.civilization.state.round
-    session.engine.run_round(session.civilization)
+    cycles = session.civilization.config.cycles_per_round
+    await manager.broadcast(game_id, {
+        "type": "round_start",
+        "round": current_round + 1,
+        "total_cycles": cycles,
+    })
+    for cycle in range(cycles):
+        session.civilization.state.cycle += 1
+        session.engine.run_cycle(session.civilization)
+        await manager.broadcast(game_id, {
+            "type": "cycle_progress",
+            "round": current_round + 1,
+            "cycle": cycle + 1,
+            "total_cycles": cycles,
+            "total_output": session.civilization.state.total_output,
+        })
+    session.civilization.state.round += 1
+    session.civilization.state.cycle = 0  # 重置循环计数
+    await manager.broadcast(game_id, {
+        "type": "round_complete",
+        "round": session.civilization.state.round,
+        "total_output": session.civilization.state.total_output,
+    })
 
     # 记录历史
     round_data = {

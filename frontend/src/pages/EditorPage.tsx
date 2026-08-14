@@ -25,9 +25,30 @@ export default function EditorPage() {
   const [showHistory, setShowHistory] = useState(false) // 历史时间线视图
   const [historyTimeline, setHistoryTimeline] = useState<TimelineRound[]>([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [cycleProgress, setCycleProgress] = useState<{ cycle: number; total: number } | null>(null)
 
   const agents = state.gameState?.agents || []
   const civilizationId = agents[0]?.id.split('_A')[0] // 从Agent ID推导文明ID
+
+  // WebSocket: 接收每循环进度推送
+  useEffect(() => {
+    if (!gameId) return
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const ws = new WebSocket(`${proto}://${window.location.host}/api/v1/game/${gameId}/ws`)
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data)
+        if (msg.type === 'round_start') {
+          setCycleProgress({ cycle: 0, total: msg.total_cycles })
+        } else if (msg.type === 'cycle_progress') {
+          setCycleProgress({ cycle: msg.cycle, total: msg.total_cycles })
+        } else if (msg.type === 'round_complete') {
+          setCycleProgress(null)
+        }
+      } catch { /* 忽略非JSON消息 */ }
+    }
+    return () => ws.close()
+  }, [gameId])
 
   // 加载历史时间线
   const handleToggleHistory = async () => {
@@ -307,6 +328,23 @@ export default function EditorPage() {
 
               <div ref={messagesEndRef} />
             </div>
+
+            {/* WebSocket 循环进度条 */}
+            {cycleProgress && (
+              <div className="flex-shrink-0 mb-3">
+                <div className="flex justify-between text-xs text-cyber-text-muted mb-1">
+                  <span>模拟进度</span>
+                  <span>{cycleProgress.cycle} / {cycleProgress.total} 循环</span>
+                </div>
+                <div className="h-1.5 bg-cyber-secondary rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-cyber-accent"
+                    animate={{ width: `${(cycleProgress.cycle / cycleProgress.total) * 100}%` }}
+                    transition={{ duration: 0.3 }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* 操作按钮 */}
             <div className="flex gap-3 flex-shrink-0">

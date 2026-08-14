@@ -18,4 +18,15 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'animation': ['framer-motion'],
+          'dnd': ['@dnd-kit/core', '@dnd-kit/sortable', '@xyflow/react'],
+        },
+      },
+    },
+  },
 })

@@ -1,9 +1,11 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { GameProvider } from './stores/GameContext'
 import StartPage from './pages/StartPage'
-import SelectPage from './pages/SelectPage'
-import EditorPage from './pages/EditorPage'
-import ResultPage from './pages/ResultPage'
+
+const SelectPage = lazy(() => import('./pages/SelectPage'))
+const EditorPage = lazy(() => import('./pages/EditorPage'))
+const ResultPage = lazy(() => import('./pages/ResultPage'))
 
 function App() {
   return (
@@ -17,13 +19,15 @@ function App() {
 
           {/* 主内容 */}
           <div className="relative z-10">
-            <Routes>
-              <Route path="/" element={<StartPage />} />
-              <Route path="/select" element={<SelectPage />} />
-              <Route path="/editor/:gameId" element={<EditorPage />} />
-              <Route path="/result/:gameId" element={<ResultPage />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+            <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-cyber-text-muted">加载中...</div>}>
+              <Routes>
+                <Route path="/" element={<StartPage />} />
+                <Route path="/select" element={<SelectPage />} />
+                <Route path="/editor/:gameId" element={<EditorPage />} />
+                <Route path="/result/:gameId" element={<ResultPage />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Suspense>
           </div>
         </div>
       </BrowserRouter>
